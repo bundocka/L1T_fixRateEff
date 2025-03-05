@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 import awkward as ak
 from itertools import cycle
+from pathlib import Path
 
 import utils.tools as tools
 import utils.plotting as plotting
@@ -19,14 +20,6 @@ plt.rcParams["figure.figsize"] = (10,7)
 # input data definition
 # put "default" objects first
 # i.e. those that should be used to obtain fixed rate
-
-#nComp = 3
-
-#l1Labels = ['L1', 'L1_noJEC', 'L1_noJECnoPUSnoPUM']
-#branchTypes = ['unp', 'emu', 'emu'] # unp or emu
-
-#sigPaths  = ["zmu24I_noJEC/", "zmu24I_noJEC/", "zmu24I_noJEC_noPUS_noPUM/"]
-#bkgPaths  = ["zb24I_noJEC/", "zb24I_noJEC/", "zb24I_noJEC_noPUS_noPUM/"]
 
 nComp = 4
 
@@ -47,16 +40,16 @@ bkgName = "zb"
 
 writeDir = "./data/"
 
-fileName = "nano_2*.root"
+for label in l1Labels:
+       Path(writeDir+"/"+label).mkdir(parents=True, exist_ok=True)
 
-sigFiles = [glob.glob(rootDir + path + fileName) for path in sigPaths]
-bkgFiles = [glob.glob(rootDir + path + fileName) for path in bkgPaths]
+fileName = "nano_1*.root"
 
-if len(l1Labels) != nComp or len(branchTypes) != nComp or len(sigFiles) != nComp or len(bkgFiles) != nComp:
+sigFilesArr = [glob.glob(rootDir + path + fileName) for path in sigPaths]
+bkgFilesArr = [glob.glob(rootDir + path + fileName) for path in bkgPaths]
+
+if len(l1Labels) != nComp or len(branchTypes) != nComp or len(sigFilesArr) != nComp or len(bkgFilesArr) != nComp:
        raise TypeError("Number of inputs datasets is not consistent")
-
-sig_hdf5s = [writeDir + "/" + sigName + label + ".hdf5" for label in l1Labels]
-bkg_hdf5s = [writeDir + "/" + bkgName + label + ".hdf5" for label in l1Labels]
 
 # L1 thresholds (GeV)
 l1JetThresholds = [30, 120, 180]
@@ -71,45 +64,23 @@ sig_dfs = []
 bkg_dfs = []
 
 
-# In[4]:
-
-
 if inputFormat == 'nano':
     
-    for sigFile, branchType in  zip(sigFiles, branchTypes):
-        sigs.append(tools.getArrays(sigFile, tools.getBranches(['Jet'], branchType=='emu', False), len(sigFile)))
-                       
-    for bkgFile, branchType in zip(bkgFiles, branchTypes):
-        bkgs.append(tools.getArrays(bkgFile, tools.getBranches(['Jet'], branchType=='emu', False), len(bkgFile)))
+    for sigFiles, branchType, l1Label in  zip(sigFilesArr, branchTypes, l1Labels):
+        nFiles = len(sigFiles)
+        tools.getDataframes(sigFiles[:nFiles], tools.getBranches(['Jet'], branchType=='emu', False), l1Label, writeDir, True)
+    for bkgFiles, branchType, l1Label in  zip(bkgFilesArr, branchTypes, l1Labels):
+        nFiles = len(bkgFiles)
+        tools.getDataframes(bkgFiles[:nFiles], tools.getBranches(['Jet'], branchType=='emu', False), l1Label, writeDir, False)
 
+sig_hdf5FilesArr = [glob.glob(writeDir + "/" + label + "/*sig.hdf5") for label in l1Labels]
+bkg_hdf5FilesArr = [glob.glob(writeDir + "/" + label + "/*bkg.hdf5") for label in l1Labels]
 
-if inputFormat == 'nano':
-
-    for sig, sig_hdf5, l1Label in zip(sigs, sig_hdf5s, l1Labels):
-        # get the puppiMETs
-        puppiMET, puppiMETNoMu = tools.getPUPPIMET(sig)
-        # get the l1METs
-        l1MET_df = pd.DataFrame(ak.to_list(ak.flatten(tools.getSum(sig, 'methf')['EtSum_pt'])), columns=[l1Label])
-        puppiMET_df = pd.DataFrame(ak.to_list(puppiMET['PuppiMET_pt']), columns=['PuppiMET'])
-        puppiMETNoMu_df = pd.DataFrame(ak.to_list(puppiMETNoMu['PuppiMET_pt']), columns=['PuppiMETNoMu'])
-        # save to dataframe
-        pd.concat([l1MET_df, puppiMET_df, puppiMETNoMu_df], axis=1).to_hdf(sig_hdf5, l1Label, mode='w')
-
-
-
-for bkg, bkg_hdf5, l1Label in zip(bkgs, bkg_hdf5s, l1Labels):
-        
-        l1MET_df = pd.DataFrame(ak.to_list(ak.flatten(tools.getSum(bkg, 'methf')['EtSum_pt'])), columns=[l1Label])
-        l1MET_df.to_hdf(bkg_hdf5, l1Label, mode='w')
-
-
-
-for sig_hdf5, l1Label in zip(sig_hdf5s, l1Labels):
-    sig_dfs.append(pd.read_hdf(sig_hdf5, l1Label))
+for sig_hdf5Files, l1Label in zip(sig_hdf5FilesArr, l1Labels):
+    sig_dfs.append(pd.concat([pd.read_hdf(sig_hdf5, l1Label) for sig_hdf5 in sig_hdf5Files]))
     
-for bkg_hdf5, l1Label in zip(bkg_hdf5s, l1Labels):
-    bkg_dfs.append(pd.read_hdf(bkg_hdf5, l1Label))
-
+for bkg_hdf5Files, l1Label in zip(bkg_hdf5FilesArr, l1Labels):
+    bkg_dfs.append(pd.concat([pd.read_hdf(bkg_hdf5, l1Label) for bkg_hdf5 in bkg_hdf5Files]))
 
 
 # plot the MET distributions

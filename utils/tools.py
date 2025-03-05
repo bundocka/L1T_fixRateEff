@@ -4,15 +4,27 @@ import awkward as ak
 import utils.branches as branches
 import uproot
 
-def getArrays(inputFiles, branches, nFiles=1, fname="data.parquet"):
+def getDataframes(inputFiles, inputBranches, l1Label, writeDir, signal=True):
 
-    files = [{file: 'Events'} for file in inputFiles][:nFiles]
+    for inFile in inputFiles:
+        print("Opening file:\t" + inFile)
+        tag = "_sig" if signal else "_bkg"
+        outFile = writeDir + "/" + l1Label + "/" + inFile.split('/')[-1].split(".")[0] + tag + ".hdf5"
+        inputFile = {inFile: 'Events'}
+        data = ak.concatenate([batch for batch in uproot.iterate(inputFile, filter_name=inputBranches)])
+        data = formatBranches(data)
 
-    # get the data
-    data = ak.concatenate([batch for batch in uproot.iterate(files, filter_name=branches)])
-    data = formatBranches(data)
+        l1MET_df = pd.DataFrame(ak.to_list(ak.flatten(getSum(data, 'methf')['EtSum_pt'])), columns=[l1Label])
 
-    return data
+        if signal:
+            puppiMET, puppiMETNoMu = getPUPPIMET(data)
+            puppiMET_df = pd.DataFrame(ak.to_list(puppiMET['PuppiMET_pt']), columns=['PuppiMET'])
+            puppiMETNoMu_df = pd.DataFrame(ak.to_list(puppiMETNoMu['PuppiMET_pt']), columns=['PuppiMETNoMu'])
+            pd.concat([l1MET_df, puppiMET_df, puppiMETNoMu_df], axis=1).to_hdf(outFile, key=l1Label, mode='w')
+        else:
+            l1MET_df.to_hdf(outFile, key=l1Label, mode='w')
+
+        print("Saved output file: " + outFile)
 
 
 def getL1Types(useEmu=False, useMP=False):
